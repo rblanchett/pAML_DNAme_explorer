@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Promoter CpG methylation in H-defined molecular bridge neighborhoods of pediatric AML. Aggregate-only, exploratory network.">
+<title>Promoter Methylation | Pediatric AML NMF Atlas</title>
+<link rel="stylesheet" href="assets/style.css">
+<script defer src="data/atlas.js"></script>
+<script defer src="assets/app.js"></script>
+</head>
+<body>
+<header class="site-header">
+  <div class="eyebrow">PEDIATRIC AML / NMF MOLECULAR NEIGHBORHOODS</div>
+  <div class="header-row"><div><h1>Promoter methylation network</h1><p class="subtitle">An exploratory, gene-resolved view of observed DNA methylation in original groups and directional H-defined bridges.</p></div><div class="header-tags"><span class="tag">GRCh38</span><span class="tag">EPIC array</span><span class="tag">Pooled cohort</span></div></div>
+  <div class="stats" id="datasetStats" aria-live="polite">Loading validated aggregate data…</div>
+</header>
+<main class="layout">
+ <aside class="sidebar panel">
+  <h2>Explore promoter genes</h2>
+  <label for="geneSearch">Gene symbol / annotation label</label>
+  <div class="search-holder"><input id="geneSearch" type="search" autocomplete="off" spellcheck="false" placeholder="Search genes (e.g. GATA3)"><div id="suggestions" class="suggestions" hidden></div></div>
+  <p id="geneStatus" class="help" aria-live="polite"></p>
+  <div class="examples"><span class="micro">Try</span><button type="button" data-try="GATA3">GATA3</button><button type="button" data-try="WT1">WT1</button><button type="button" data-try="IKZF1">IKZF1</button><button type="button" data-try="CD34">CD34</button></div>
+  <div class="field"><label for="viewMode">Aggregation</label><select id="viewMode"><option value="gene">Gene: mean over CpGs</option><option value="cpg">Individual CpG</option></select></div>
+  <div class="field" id="cpgSelectHolder" hidden><label for="cpgSelect">Promoter CpG</label><select id="cpgSelect"></select></div>
+  <div class="rule"></div>
+  <div class="field"><label for="signature">CpG-suite annotation</label><select id="signature"><option value="all">All qualifying promoter CpGs</option><option value="restricted">11D primary restricted</option><option value="conserved">11D neighborhood conserved</option><option value="core">Original group core (06)</option><option value="bridge">Prior bridge-associated (07a)</option><option value="distinguishing">Pair distinguishing / higher (06b)</option><option value="shared">Pair shared (06b)</option><option value="11c">Previous 11C label</option></select><p class="help">Overlapping labels are preserved. Filtering does not alter the original test results.</p></div>
+  <div class="field"><label for="contrast">Arrow contrast</label><select id="contrast"><option value="IN">Bridge − source nonbridge (I − N)</option><option value="IP">Bridge − target primary (I − P)</option></select></div>
+  <div class="field"><label for="qMax">Maximum CpG-wise BH FDR</label><select id="qMax"><option value="0.05">q ≤ 0.05</option><option value="0.10">q ≤ 0.10</option><option value="1.00">No significance filter</option></select></div>
+  <div class="field"><div class="label-line"><label for="effectMin">Minimum |Δβ| on arrows</label><output id="effectMinLabel">0.15</output></div><input type="range" id="effectMin" min="0" max="0.30" value="0.15" step="0.025"></div>
+  <div class="field"><div class="label-line"><label for="wMin">Minimum target W percentile</label><output id="wMinLabel">0%</output></div><input type="range" id="wMin" min="0" max="95" value="0" step="5"><p class="help">Optional prioritization only. W does not set red/blue direction.</p></div>
+  <button class="outline-button" id="exportCsv" type="button">Export displayed CpG details (CSV)</button>
+  <div class="rule"></div>
+  <h3>What the colors mean</h3>
+  <div class="legend-row"><span class="swatch red"></span><span><b>Red arrow:</b> incoming bridges have higher beta than the chosen reference</span></div>
+  <div class="legend-row"><span class="swatch blue"></span><span><b>Blue arrow:</b> incoming bridges have lower beta than the reference</span></div>
+  <div class="legend-row"><span class="swatch gray"></span><span><b>Gray dashed arrow:</b> significant CpGs with mixed directions</span></div>
+  <div class="legend-caption">NMF circles show <b>mean observed beta</b> in original primary group members for represented CpGs. A blue circle is relatively low methylation (toward β=0); red is relatively high (toward β=1). This is <b>not</b> a healthy-control differential comparison.</div>
+  <div class="gradient" aria-hidden="true"></div><div class="gradient-labels"><span>β=0</span><span>β=0.5</span><span>β=1</span></div>
+ </aside>
+ <section class="graph-column">
+   <div class="panel network-panel"><div class="panel-heading"><div><h2 id="graphTitle">Select a promoter gene</h2><p class="help" id="graphSubtitle"></p></div><span class="micro">Click an arrow or a circle to inspect its evidence</span></div>
+   <div id="svgWrap" class="svg-wrap"><svg id="network" viewBox="0 0 1000 790" role="img" aria-label="Original NMF groups linked by qualifying directional CpG methylation differences"><defs><marker id="arrow-red" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0 0L7 3.5L0 7Z" fill="#c84d5d"/></marker><marker id="arrow-blue" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0 0L7 3.5L0 7Z" fill="#3478bf"/></marker><marker id="arrow-mixed" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0 0L7 3.5L0 7Z" fill="#888999"/></marker></defs><g id="edgeLayer"></g><g id="nodeLayer"></g></svg></div>
+   <div class="network-foot"><span id="edgeSummary" class="help"></span><span class="help">Source → Target = TARGET enters the SOURCE patient's H neighborhood, not a time transition</span></div>
+   </div>
+   <section class="panel table-panel"><div class="panel-heading"><h2>Underlying CpG evidence</h2><span id="tableCount" class="micro"></span></div><div id="tableExplainer" class="help">The CpG-level table follows your selected gene, filters, and optional selected arrow.</div><div class="table-scroll"><table><thead><tr><th>Direction</th><th>CpG</th><th>GRCh38</th><th>β target P</th><th>β bridge I</th><th>β source N</th><th>Arrow Δβ</th><th>BH q</th><th>W pct.</th><th>Original labels</th></tr></thead><tbody id="evidenceBody"></tbody></table></div></section>
+ </section>
+ <aside class="detail-column panel"><div class="panel-heading"><h2>Evidence details</h2></div><div id="details" aria-live="polite"><p class="help">Select a gene, then click a colored arrow or an NMF circle.</p></div></aside>
+</main>
+<footer><p>Discovery-cohort, post-selection, exploratory associations. Welch/TOST BH adjustments were applied per directed comparison and test family in Script 11D. Gene summaries are descriptive averages of CpG statistics and are <b>not gene-level hypothesis tests</b>. H-neighborhood inclusion does not imply differentiation, lineage change, migration, or longitudinal transition. No patient identifiers or patient-level methylation records are distributed here.</p></footer>
+<div id="tooltip" class="tooltip" hidden role="status"></div>
+</body>
+</html>
