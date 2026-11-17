@@ -1,24 +1,75 @@
 {
+  "schema": "pAML-methylation-v2",
+  "input_11d_12c_exact_order_match": true,
   "meta": {
-    "associations": 24792,
-    "uniqueCpGs": 15048,
-    "promoterGenes": 9968,
-    "eligibleDirections": 113,
     "cohortPatients": 854,
-    "coordAssembly": "GRCh38",
-    "nodeMeaning": "Original primary NMF-group mean beta for available CpG sites (target-primary direct or reconstructed from source I+N)",
-    "arrowMeaning": "Incoming bridge beta minus source nonbridge beta (default); statistical BH adjustment per direction and contrast"
+    "associations": 79920,
+    "uniqueCpGs": 50013,
+    "geneLabels": 20277,
+    "eligibleDirectionsWithCpGs": 119,
+    "allClinicalDirectionalRecords": 1254,
+    "clinicalEligibleByPopulation": {
+      "All": 153,
+      "Female": 74,
+      "Male": 65
+    },
+    "regionAssociationCounts": {
+      "Gene body": 41397,
+      "Promoter": 24792,
+      "Intergenic": 13731
+    },
+    "uniqueCpGsByRegion": {
+      "Gene body": 26012,
+      "Intergenic": 8953,
+      "Promoter": 15048
+    },
+    "strictPromoterCpGs": 15048,
+    "strictPromoterDirections": 113,
+    "source": "11D + 12C + 13C; observational discovery suite only",
+    "assembly": "GRCh38",
+    "node": "Mean beta of available unique CpGs in original primary NMF group; not differential",
+    "arrow": "Signed CpG-wise effect for selected contrast; not change over time",
+    "sexMethylationAvailable": false,
+    "publicSuppressionThreshold": 5
   },
-  "original_group_mean_records": 41046,
-  "groups_with_original_means": 19,
-  "11D_12C_row_match": true,
-  "group_node_count": 23,
+  "group_probe_original_mean_records": 134073,
+  "group_mean_consistency_cross_checks": 25767,
+  "eligible_clinical_rows_with_unredacted_counts": 292,
+  "clinical_rows_with_suppressed_counts": 962,
+  "group_mean_coverage_groups": 19,
+  "flag_true_counts": {
+    "Primary_Restricted": 22605,
+    "Primary_Restricted_010": 22605,
+    "Neighborhood_Conserved": 57315,
+    "Neighborhood_Conserved_010": 57315,
+    "Core_Target_06": 13121,
+    "Core_Source_06": 533,
+    "Prior_Bridge_Source_to_Target_07a": 38051,
+    "Prior_Bridge_Target_to_Source_07a": 55,
+    "Prior_11C_Target_Restricted": 2232,
+    "Prior_11C_Target_Conserved": 10607,
+    "Prior_06b_A_Higher_015": 25266,
+    "Prior_06b_B_Higher_015": 28329,
+    "Prior_06b_Shared_Higher_015": 0,
+    "Prior_06b_Shared_Lower_015": 0,
+    "Prior_06b_Shared_Higher_Formal_015": 0,
+    "Prior_06b_Shared_Lower_Formal_015": 0,
+    "Prior_06b_A_Defining_Concordant_Distinct_015": 6034,
+    "Prior_06b_B_Defining_Concordant_Distinct_015": 5646,
+    "Prior_06b_Target_Higher_015": 25741,
+    "Prior_06b_Source_Higher_015": 27854,
+    "Prior_06b_Target_Defining_Distinct_015": 11152,
+    "Prior_06b_Source_Defining_Distinct_015": 528
+  },
   "notes": [
-    "12C already carries 11D columns; 11D used for identity audit only.",
-    "Only GRCh38 promoter overlaps are used. Semicolon-separated genes are expanded, preserving multi-gene overlaps.",
-    "Means reconstructed by CpG-specific I/N observed counts for source groups; direct P means for target groups.",
-    "No outcome data or private patient IDs exported.",
-    "CpGs selected within the same cohort; not independent validation.",
-    "Inference is pooled; 13C sex-specific clinical summaries are not sex-specific CpG statistics."
+    "12C contains all 11D selected associations; 11D is independently verified by keys if supplied.",
+    "Original primary group CpG means: directly reported target means or reconstructed from observed source I and N partition.",
+    "Promoters are TSS -2000 to +500 bp as defined by 12C; gene-body overlap and intergenic nearest-gene contexts are distinct.",
+    "Nearest-gene assignment is distance-based, not a demonstrated regulatory connection.",
+    "All 22 overlapping CpG provenance flags are retained, including categories with zero hits.",
+    "Clinical rows are separate summary records. Female and Male clinical records are NOT sex-stratified methylation tests.",
+    "Ineligible clinical records have subgroup counts and clinical top-hit metadata withheld; minimum public cell size applies.",
+    "Group-level means and gene summaries are descriptive; no gene-level or cross-direction q-values are calculated.",
+    "No patient IDs, individual methylation profiles or private H signatures exported."
   ]
 }
