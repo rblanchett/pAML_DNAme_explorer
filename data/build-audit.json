@@ -1,0 +1,24 @@
+{
+  "meta": {
+    "associations": 24792,
+    "uniqueCpGs": 15048,
+    "promoterGenes": 9968,
+    "eligibleDirections": 113,
+    "cohortPatients": 854,
+    "coordAssembly": "GRCh38",
+    "nodeMeaning": "Original primary NMF-group mean beta for available CpG sites (target-primary direct or reconstructed from source I+N)",
+    "arrowMeaning": "Incoming bridge beta minus source nonbridge beta (default); statistical BH adjustment per direction and contrast"
+  },
+  "original_group_mean_records": 41046,
+  "groups_with_original_means": 19,
+  "11D_12C_row_match": true,
+  "group_node_count": 23,
+  "notes": [
+    "12C already carries 11D columns; 11D used for identity audit only.",
+    "Only GRCh38 promoter overlaps are used. Semicolon-separated genes are expanded, preserving multi-gene overlaps.",
+    "Means reconstructed by CpG-specific I/N observed counts for source groups; direct P means for target groups.",
+    "No outcome data or private patient IDs exported.",
+    "CpGs selected within the same cohort; not independent validation.",
+    "Inference is pooled; 13C sex-specific clinical summaries are not sex-specific CpG statistics."
+  ]
+}
