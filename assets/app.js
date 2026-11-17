@@ -1,171 +1,218 @@
-/* Pediatric AML Promoter CpG Network | standalone/static, no requests or dependencies */
+/* Integrated Pediatric AML NMF CpG molecular explorer v2. Static, no external calls. */
 (()=>{'use strict';
-const D=window.PAML_PROMOTER_ATLAS;
-const el=id=>document.getElementById(id), NS='http://www.w3.org/2000/svg';
-if(!D||D.schema!=='pAML-promoter-v1') {el('graphTitle').textContent='Could not load the promoter data';el('graphSubtitle').textContent='Ensure data/atlas.js is present in the same folder as this page.';return;}
-const R={PROBE:0,DIR:1,P:2,I:3,N:4,NP:5,NI:6,NN:7,QIN:8,QPI:9,QPN:10,QTOST:11,MASK:12,W:13,WSPEC:14,WSHARE:15,DIN:16};
-const flagIndex=Object.fromEntries(D.flags.map((x,i)=>[x,i]));
-const groupList=D.groups.map(x=>x[0]);
-const groupCounts=Object.fromEntries(D.groups);
-const groupMeanMap=new Map(Object.entries(D.groupMeans).map(([key,rows])=>[key,new Map(rows.map(a=>[a[0],{beta:a[1],n:a[2]}]))]));
-const geneList=Object.keys(D.geneRows);
-const state={gene:'',mode:'gene',cpg:null,signature:'all',contrast:'IN',qMax:0.05,effectMin:.15,wMin:0,select:{type:'none',id:null}};
-let current={rows:[],probes:[],edges:[],nodes:[]};
+const D=window.PAML_METHYLATION_ATLAS, get=id=>document.getElementById(id), NS='http://www.w3.org/2000/svg';
+if(!D||D.schema!=='pAML-methylation-v2'){
+  get('graphTitle').textContent='The atlas data could not be loaded';
+  get('graphSubtitle').textContent='Check that data/atlas.js is uploaded beside index.html.';return;
+}
+const R={C:0,D:1,P:2,I:3,N:4,NP:5,NI:6,NN:7,QIN:8,QPI:9,QPN:10,QT:11,MASK:12,W:13,WSPEC:14,WSHARE:15,WSENS:16,SDP:17,SDI:18,SDN:19,PIN:20,PPI:21,PPN:22,PT:23,DIN:24,DPI:25,DPN:26,CONS:27};
+const P={ID:0,CHR:1,START:2,END:3,STRAND:4,REGION:5,ISLAND:6,PROM:7,BODY:8,NEAREST:9,DIST:10};
+const C={SOURCE:0,TARGET:1,POP:2,STATUS:3,NS:4,NB:5,NN:6,FEAT:7,LEVEL:8,TYPE:9,EFFECT:10,UNIT:11,PV:12,QW:13,QO:14,TEST:15,ASSOC:16,UNIQUE:17,RESTRICT:18,CONS:19,BOTH:20,ONLYR:21,ONLYC:22,NEITHER:23,HAS:24};
+const groups=D.groups.map(g=>g[0]),counts=Object.fromEntries(D.groups),geneList=Object.keys(D.geneRows),geneIndex=new Map(geneList.map(g=>[g.toUpperCase(),g]));
+const probeLookup=new Map(D.probes.map((p,i)=>[p[P.ID].toUpperCase(),i]));
+const rowsByProbe=new Map();D.rows.forEach((r,i)=>{const p=r[R.C];if(!rowsByProbe.has(p))rowsByProbe.set(p,[]);rowsByProbe.get(p).push(i);});
+const groupMeans=new Map(Object.entries(D.groupMeans).map(([group,vals])=>[group,new Map(vals.map(v=>[v[0],{beta:v[1],n:v[2]}]))]));
+const clinical=new Map(D.clinical.map(r=>[`${r[C.SOURCE]}|${r[C.TARGET]}|${r[C.POP]}`,r]));
+const flags=Object.fromEntries(D.flags.map((f,i)=>[f,i]));
+const flagGroups={restricted:['Primary_Restricted'],conserved:['Neighborhood_Conserved'],restricted010:['Primary_Restricted_010'],conserved010:['Neighborhood_Conserved_010'],
+ core:['Core_Target_06','Core_Source_06'],bridge:['Prior_Bridge_Source_to_Target_07a','Prior_Bridge_Target_to_Source_07a'],
+ distinguishing:['Prior_06b_A_Higher_015','Prior_06b_B_Higher_015','Prior_06b_A_Defining_Concordant_Distinct_015','Prior_06b_B_Defining_Concordant_Distinct_015','Prior_06b_Target_Higher_015','Prior_06b_Source_Higher_015','Prior_06b_Target_Defining_Distinct_015','Prior_06b_Source_Defining_Distinct_015'],
+ shared:['Prior_06b_Shared_Higher_015','Prior_06b_Shared_Lower_015','Prior_06b_Shared_Higher_Formal_015','Prior_06b_Shared_Lower_Formal_015'],
+ '11c':['Prior_11C_Target_Restricted','Prior_11C_Target_Conserved']};
 const colors={red:'#c84d5d',blue:'#3478bf',mixed:'#888999'};
-const compareName=()=>state.contrast==='IN'?'incoming bridges − source nonbridges':'incoming bridges − target primary';
+const state={gene:'',directProbe:null,mode:'gene',cpg:null,region:'Promoter',island:'All',signature:'all',contrast:'IN',qMax:.05,effectMin:.15,wMin:0,source:'All',target:'All',selection:{type:'none',id:null}};
+let view={ids:[],probes:[],edges:[],nodes:[]};
+const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const clamp=(x,a,b)=>Math.min(b,Math.max(a,x));
-const colorLerp=(a,b,t)=>`rgb(${a.map((v,i)=>Math.round(v+(b[i]-v)*t)).join(',')})`;
-const betaColor=b=>{if(b===null||!Number.isFinite(b))return '#e9edf2';let v=clamp(b,0,1);return v<=.5?colorLerp([166,205,239],[247,249,251],v*2):colorLerp([247,249,251],[245,188,197],(v-.5)*2);};
-const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmt=(x,d=3)=>x===null||x===undefined||!Number.isFinite(x)?'—':Number(x).toFixed(d);
-const fmtP=q=>q===null||q===undefined||!Number.isFinite(q)?'—':q<.0001?'<0.0001':q.toFixed(4);
-const labelDir=di=>{let d=D.directions[di];return `${d[0]} → ${d[1]}`;};
-const flag=(mask,key)=>(mask & (1<<flagIndex[key]))!==0;
-const flagGroup={
- 'restricted':['Primary_Restricted'],
- 'conserved':['Neighborhood_Conserved'],
- 'core':['Core_Target_06','Core_Source_06'],
- 'bridge':['Prior_Bridge_Source_to_Target_07a','Prior_Bridge_Target_to_Source_07a'],
- 'distinguishing':['Prior_06b_A_Higher_015','Prior_06b_B_Higher_015','Prior_06b_A_Defining_Concordant_Distinct_015','Prior_06b_B_Defining_Concordant_Distinct_015','Prior_06b_Target_Higher_015','Prior_06b_Source_Higher_015','Prior_06b_Target_Defining_Distinct_015','Prior_06b_Source_Defining_Distinct_015'],
- 'shared':['Prior_06b_Shared_Higher_015','Prior_06b_Shared_Lower_015','Prior_06b_Shared_Higher_Formal_015','Prior_06b_Shared_Lower_Formal_015'],
- '11c':['Prior_11C_Target_Restricted','Prior_11C_Target_Conserved']
-};
-const fullFlags=mask=>D.flags.filter((k,i)=>(mask&(1<<i))!==0);
-const shortFlags=mask=>{
-  let out=[];if(flag(mask,'Primary_Restricted'))out.push('11D restricted');if(flag(mask,'Neighborhood_Conserved'))out.push('11D conserved');
-  if(flagGroup.core.some(x=>flag(mask,x)))out.push('Core 06');if(flagGroup.bridge.some(x=>flag(mask,x)))out.push('Bridge 07a');
-  if(flagGroup.distinguishing.some(x=>flag(mask,x)))out.push('Pair higher/distinct');
-  if(flagGroup.shared.some(x=>flag(mask,x)))out.push('Pair shared');
-  if(flagGroup['11c'].some(x=>flag(mask,x)))out.push('11C');return out;
-};
-function qualifyCategory(row){if(state.signature==='all')return true;return (flagGroup[state.signature]||[]).some(x=>flag(row[R.MASK],x));}
-function diff(row){return state.contrast==='IN'?row[R.DIN]:row[R.I]===null||row[R.P]===null?null:row[R.I]-row[R.P];}
-function qValue(row){return state.contrast==='IN'?row[R.QIN]:row[R.QPI];}
-function qualifiesArrow(row){let v=diff(row),q=qValue(row);return Number.isFinite(v)&&Math.abs(v)+1e-10>=state.effectMin&&(state.qMax===1||q!==null&&q<=state.qMax+1e-10);}
-function updateCpGs(){let records=D.geneRows[state.gene]||[];let ids=[...new Set(records.map(i=>D.rows[i][R.PROBE]))].sort((a,b)=>D.probes[a][0].localeCompare(D.probes[b][0]));
-  let box=el('cpgSelect');box.replaceChildren();for(let p of ids){const o=document.createElement('option');o.value=p;o.textContent=D.probes[p][0]+' · chr'+D.probes[p][1]+':'+D.probes[p][2];box.append(o);}
-  if(!ids.includes(state.cpg))state.cpg=ids[0]??null;box.value=state.cpg===null?'':String(state.cpg);el('cpgSelectHolder').hidden=state.mode!=='cpg';
-}
-function setGene(g){if(!D.geneRows[g])return;state.gene=g;state.cpg=null;state.select={type:'none',id:null};el('geneSearch').value=g;el('suggestions').hidden=true;updateCpGs();draw();}
-function activeRows(){let ids=D.geneRows[state.gene]||[];return ids.filter(i=>{let r=D.rows[i];return (state.mode!=='cpg'||r[R.PROBE]===state.cpg)&&qualifyCategory(r)&&(r[R.W]!==null&&r[R.W]>=state.wMin/100-1e-10||state.wMin===0);});}
-function summarize(){let rowIndices=activeRows(),byDir=new Map();let probes=new Set();for(const ri of rowIndices){let r=D.rows[ri];probes.add(r[R.PROBE]);if(!qualifiesArrow(r))continue;let di=r[R.DIR];if(!byDir.has(di))byDir.set(di,[]);byDir.get(di).push(ri);}
- let edges=[];for(let [id,ids] of byDir){let vals=ids.map(i=>diff(D.rows[i]));let pos=vals.filter(v=>v>0).length,neg=vals.filter(v=>v<0).length;
-  let sign=pos&&neg?'mixed':pos?'red':neg?'blue':'mixed';let mean=vals.reduce((a,b)=>a+b,0)/vals.length;
-  edges.push({id,ids,nCpG:new Set(ids.map(i=>D.rows[i][R.PROBE])).size,sign,mean,nPositive:pos,nNegative:neg});}
- const nodeSummary=[];for(const group of groupList){let gm=groupMeanMap.get(group)||new Map();let observations=[...probes].map(p=>({p,value:gm.get(p)})).filter(x=>x.value);
-  let mean=observations.length?observations.reduce((s,v)=>s+v.value.beta,0)/observations.length:null;
-  nodeSummary.push({group,mean,nProbes:observations.length,available:probes.size,count:groupCounts[group],obs:observations});}
- return {rows:rowIndices,probes:[...probes],edges:edges.sort((a,b)=>b.nCpG-a.nCpG),nodes:nodeSummary};
-}
-function svg(name,attrs={},text=null){let x=document.createElementNS(NS,name);for(let [k,v] of Object.entries(attrs))x.setAttribute(k,String(v));if(text!==null)x.textContent=text;return x;}
-function locate(group){let i=groupList.indexOf(group), angle=-Math.PI/2+i*2*Math.PI/groupList.length;
- return {x:500+365*Math.cos(angle),y:393+304*Math.sin(angle)};}
-function edgePath(g1,g2){let a=locate(g1),b=locate(g2),dx=b.x-a.x,dy=b.y-a.y,len=Math.hypot(dx,dy)||1,ux=dx/len,uy=dy/len,nx=-uy,ny=ux;
- let r=34,start={x:a.x+ux*r,y:a.y+uy*r},end={x:b.x-ux*(r+8),y:b.y-uy*(r+8)};
- let mid={x:(start.x+end.x)/2,y:(start.y+end.y)/2};let bend=Math.min(90,20+len*.085);
- let cx=mid.x+nx*bend+(.06*(500-mid.x)),cy=mid.y+ny*bend+(.06*(393-mid.y));return `M${start.x.toFixed(2)} ${start.y.toFixed(2)} Q${cx.toFixed(2)} ${cy.toFixed(2)} ${end.x.toFixed(2)} ${end.y.toFixed(2)}`;}
-function tooltip(content,e){const t=el('tooltip');t.innerHTML=content;t.hidden=false;const rect=t.getBoundingClientRect();t.style.left=clamp(e.clientX+14,8,window.innerWidth-rect.width-12)+'px';t.style.top=clamp(e.clientY+12,8,window.innerHeight-rect.height-12)+'px';}
-function hideTip(){el('tooltip').hidden=true;}
-function selectEdge(id){state.select={type:'edge',id};draw();}
-function selectNode(id){state.select={type:'node',id};draw();}
-function populateNetwork(){const edgeLayer=el('edgeLayer'),nodeLayer=el('nodeLayer');edgeLayer.replaceChildren();nodeLayer.replaceChildren();
- for(let ed of current.edges){let [src,tgt,nSource,nBridge]=D.directions[ed.id],s=ed.sign,stroke=colors[s];let active=state.select.type==='edge'&&state.select.id===ed.id;
-  let g=svg('g',{class:'edge'+(active?' active':''),'aria-label':`${src} to ${tgt}: ${ed.nCpG} qualifying CpGs`});
-  let path=edgePath(src,tgt);let p=svg('path',{d:path,stroke,'stroke-width':2.1+Math.min(4,Math.log2(1+ed.nCpG)*.9),'stroke-dasharray':s==='mixed'?'7 5':'none','marker-end':`url(#arrow-${s})`,opacity:active?1:.75});
-  let hit=svg('path',{d:path,stroke:'transparent','stroke-width':18,fill:'none',tabindex:0,role:'button'});
-  let tip=()=>`<strong>${esc(src)} → ${esc(tgt)}</strong><div class="dim">${ed.nCpG} qualifying CpG(s); ${nBridge} bridge patients (before CpG-specific missingness)</div>${s==='mixed'?'Mixed directions':`Mean qualifying-site Δβ ${fmt(ed.mean)}`}<div class="dim">${esc(compareName())}</div>`;
-  hit.addEventListener('pointermove',e=>tooltip(tip(),e));hit.addEventListener('pointerleave',hideTip);
-  hit.addEventListener('click',()=>selectEdge(ed.id));hit.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();selectEdge(ed.id);}});g.append(p,hit);edgeLayer.append(g);
+const fq=x=>x===null||x===undefined||!Number.isFinite(x)?'—':x<.0001?'<0.0001':x.toFixed(4);
+const pct=x=>x===null||!Number.isFinite(x)?'—':(x*100).toFixed(1)+'%';
+const flag=(mask,key)=>Number.isInteger(flags[key])&&Boolean(mask & (1<<flags[key]));
+const allFlags=mask=>D.flags.filter((name,i)=>(mask & (1<<i))!==0);
+const shortFlags=mask=>{let list=[];if(flag(mask,'Primary_Restricted'))list.push('11D restricted');if(flag(mask,'Neighborhood_Conserved'))list.push('11D conserved');
+ for(const [key,label] of [['core','06 core'],['bridge','07a bridge'],['distinguishing','06b distinguishing'],['shared','06b shared'],['11c','11C']])if(flagGroups[key].some(k=>flag(mask,k)))list.push(label);return list;};
+const contrastText=()=>state.contrast==='IN'?'incoming bridge I − source nonbridge N':state.contrast==='IP'?'incoming bridge I − target primary P':'target primary P − source nonbridge N';
+const effect=r=>state.contrast==='IN'?r[R.DIN]:state.contrast==='IP'?(r[R.I]===null||r[R.P]===null?null:r[R.I]-r[R.P]):r[R.DPN];
+const adjusted=r=>r[state.contrast==='IN'?R.QIN:state.contrast==='IP'?R.QPI:R.QPN];
+const qualifies=r=>Number.isFinite(effect(r))&&Number.isFinite(adjusted(r))&&adjusted(r)<=state.qMax+1e-11&&Math.abs(effect(r))+1e-11>=state.effectMin;
+function colorBeta(b){if(!Number.isFinite(b))return '#e9edf2';const v=clamp(b,0,1),a=v<=.5?[165,203,236]:[248,249,251],z=v<=.5?[248,249,251]:[243,186,196],t=v<=.5?v*2:(v-.5)*2;
+ return `rgb(${a.map((x,i)=>Math.round(x+(z[i]-x)*t)).join(',')})`;}
+function svg(tag,attributes={},text=null){const a=document.createElementNS(NS,tag);for(const [k,v] of Object.entries(attributes))a.setAttribute(k,String(v));if(text!==null)a.textContent=text;return a;}
+function select(type,id){state.selection={type,id};draw();}
+function getRowsForGene(){return state.directProbe!==null?(rowsByProbe.get(state.directProbe)||[]):(D.geneRows[state.gene]||[]);}
+function contextRows(){const ids=getRowsForGene();return ids.filter(i=>state.region==='All'||D.probes[D.rows[i][R.C]][P.REGION]===state.region);}
+function activeRows(){return contextRows().filter(i=>{const r=D.rows[i],pr=D.probes[r[R.C]],d=D.directions[r[R.D]];
+ return (state.mode!=='cpg'||r[R.C]===state.cpg)&&(state.island==='All'||pr[P.ISLAND]===state.island)&&
+ (state.signature==='all'||flagGroups[state.signature].some(k=>flag(r[R.MASK],k)))&&
+ (state.wMin===0||Number.isFinite(r[R.W])&&r[R.W]>=state.wMin/100-1e-10)&&
+ (state.source==='All'||d[0]===state.source)&&(state.target==='All'||d[1]===state.target);});}
+function computeView(){const ids=activeRows(),sProbes=new Set(),edges=new Map();for(const i of ids){const r=D.rows[i];sProbes.add(r[R.C]);if(!qualifies(r))continue;let di=r[R.D];if(!edges.has(di))edges.set(di,[]);edges.get(di).push(i);}
+ const arrows=[];for(const [di,indices] of edges){const vals=indices.map(i=>effect(D.rows[i]));const pos=vals.filter(x=>x>0).length,neg=vals.filter(x=>x<0).length;
+ arrows.push({di,indices,number:new Set(indices.map(i=>D.rows[i][R.C])).size,pos,neg,sign:pos&&neg?'mixed':pos?'red':neg?'blue':'mixed',avg:vals.reduce((a,b)=>a+b,0)/vals.length});}
+ arrows.sort((a,b)=>b.number-a.number||a.di-b.di);
+ const nodeData=groups.map(g=>{const gm=groupMeans.get(g)||new Map(),found=[...sProbes].map(id=>({id,entry:gm.get(id)})).filter(z=>z.entry);
+ return {g,mean:found.length?found.reduce((t,z)=>t+z.entry.beta,0)/found.length:null,found,available:sProbes.size,count:counts[g]};});
+ return {ids,probes:[...sProbes],edges:arrows,nodes:nodeData};}
+function updateCpGSelect(){const ids=[...new Set(contextRows().map(i=>D.rows[i][R.C]))].sort((a,b)=>D.probes[a][P.ID].localeCompare(D.probes[b][P.ID]));
+ const box=get('cpgSelect');box.replaceChildren();for(const id of ids){const pr=D.probes[id];const opt=document.createElement('option');opt.value=String(id);opt.textContent=`${pr[P.ID]} · chr${pr[P.CHR]}:${pr[P.START]}`;box.append(opt);}
+ if(!ids.includes(state.cpg))state.cpg=ids.length?ids[0]:null;
+ box.value=state.cpg===null?'':String(state.cpg);get('cpgSelectHolder').hidden=state.mode!=='cpg';}
+function setGene(g){if(!Object.prototype.hasOwnProperty.call(D.geneRows,g))return;state.gene=g;state.directProbe=null;state.mode='gene';get('viewMode').value='gene';state.cpg=null;state.selection={type:'none',id:null};get('geneSearch').value=g;get('probeSearch').value='';get('probeStatus').textContent='';get('suggestions').hidden=true;updateCpGSelect();draw();}
+function jumpProbe(){const raw=get('probeSearch').value.trim().toUpperCase(),id=probeLookup.get(raw);if(id===undefined){get('probeStatus').textContent='Exact CpG ID not found in the 11D selected suite.';return;}
+ const pr=D.probes[id];state.directProbe=id;state.gene='';state.cpg=id;state.mode='cpg';get('viewMode').value='cpg';state.region=pr[P.REGION];get('region').value=state.region;
+ get('geneSearch').value='';get('probeStatus').textContent=`${pr[P.ID]} · ${pr[P.REGION]} · chr${pr[P.CHR]}:${pr[P.START]}`;state.selection={type:'none',id:null};updateCpGSelect();draw();}
+function groupPosition(g){const idx=groups.indexOf(g),a=-Math.PI/2+idx*2*Math.PI/groups.length;return{x:500+365*Math.cos(a),y:393+304*Math.sin(a)};}
+function pathFor(s,t){let a=groupPosition(s),b=groupPosition(t),dx=b.x-a.x,dy=b.y-a.y,L=Math.hypot(dx,dy)||1,ux=dx/L,uy=dy/L,nx=-uy,ny=ux,
+ start={x:a.x+ux*34,y:a.y+uy*34},end={x:b.x-ux*42,y:b.y-uy*42};let bend=Math.min(90,20+L*.085),cx=(start.x+end.x)/2+nx*bend,cy=(start.y+end.y)/2+ny*bend;
+ return `M${start.x.toFixed(2)} ${start.y.toFixed(2)} Q${cx.toFixed(2)} ${cy.toFixed(2)} ${end.x.toFixed(2)} ${end.y.toFixed(2)}`;}
+function tip(html,e){const b=get('tooltip');b.innerHTML=html;b.hidden=false;const rect=b.getBoundingClientRect();b.style.left=clamp(e.clientX+14,8,window.innerWidth-rect.width-12)+'px';b.style.top=clamp(e.clientY+10,8,window.innerHeight-rect.height-12)+'px';}
+function drawNetwork(){const edgeLayer=get('edgeLayer'),nodeLayer=get('nodeLayer');edgeLayer.replaceChildren();nodeLayer.replaceChildren();
+ for(const ed of view.edges){const [s,t,ns,nb]=D.directions[ed.di],active=state.selection.type==='edge'&&state.selection.id===ed.di;
+ const g=svg('g',{class:'edge'+(active?' active':'')});const d=pathFor(s,t),width=2+Math.min(4,Math.log2(1+ed.number)*.9);
+ g.append(svg('path',{d,stroke:colors[ed.sign],'stroke-width':width,'stroke-dasharray':ed.sign==='mixed'?'6 5':'none','marker-end':`url(#arrow-${ed.sign})`,opacity:active?1:.77}));
+ const hit=svg('path',{d,stroke:'transparent','stroke-width':18,fill:'none',role:'button',tabindex:0,'aria-label':`${s} to ${t}: ${ed.number} qualifying CpGs`});
+ hit.addEventListener('pointermove',e=>tip(`<strong>${esc(s)} → ${esc(t)}</strong><div>${ed.number} qualifying CpG(s); ${nb} pooled source bridge patients</div><div>Mean qualifying-site Δβ: ${fmt(ed.avg)}</div><div class="dim">${esc(contrastText())}</div>`,e));
+ hit.addEventListener('pointerleave',()=>get('tooltip').hidden=true);hit.addEventListener('click',()=>select('edge',ed.di));hit.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();select('edge',ed.di);}});
+ g.append(hit);edgeLayer.append(g);}
+ for(const nd of view.nodes){let {x,y}=groupPosition(nd.g),active=state.selection.type==='node'&&state.selection.id===nd.g;
+ const g=svg('g',{class:'node'+(nd.mean===null?' no-data':'')+(active?' active':''),role:'button',tabindex:0,'aria-label':`${nd.g}: ${nd.mean===null?'no mean available':'mean beta '+fmt(nd.mean)}`});
+ g.append(svg('circle',{cx:x,cy:y,r:32,fill:colorBeta(nd.mean),stroke:active?'#1f4465':nd.mean===null?'#c9d4e0':'#879eb5','stroke-width':active?4:1.5}));
+ g.append(svg('text',{x,y:y+1,'text-anchor':'middle'},nd.g));g.append(svg('text',{x,y:y+14,'text-anchor':'middle',class:'n-label'},nd.mean===null?'no data':'β '+fmt(nd.mean,2)));
+ g.addEventListener('click',()=>select('node',nd.g));g.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();select('node',nd.g);}});
+ g.addEventListener('pointermove',e=>tip(`<strong>${esc(nd.g)}</strong><div>Original primary mean β: ${fmt(nd.mean)}</div><div class="dim">${nd.found.length}/${nd.available} selected CpGs with means</div>`,e));g.addEventListener('pointerleave',()=>get('tooltip').hidden=true);nodeLayer.append(g);
  }
- for(let nd of current.nodes){let {x,y}=locate(nd.group);let active=state.select.type==='node'&&state.select.id===nd.group;
-  let g=svg('g',{class:'node'+(nd.mean===null?' no-data':'')+(active?' active':''),tabindex:0,role:'button','aria-label':nd.group+' mean beta '+(nd.mean===null?'unavailable':fmt(nd.mean))});
-  g.append(svg('circle',{cx:x,cy:y,r:32,fill:betaColor(nd.mean),stroke:active?'#264d70':nd.mean===null?'#ced8e3':'#879eb5','stroke-width':active?4:1.5}));
-  g.append(svg('text',{x,y:y+1,'text-anchor':'middle'},nd.group));g.append(svg('text',{x,y:y+14,'text-anchor':'middle',class:'n-label'},nd.mean!==null?'β '+fmt(nd.mean,2):'no data'));
-  let tip=()=>`<strong>${esc(nd.group)}</strong><div>Original primary group mean β: ${nd.mean===null?'not represented':fmt(nd.mean)}</div><div class="dim">${nd.nProbes}/${nd.available} selected CpGs have group-level values<br>Primary group size: ${nd.count??'not supplied (not eligible for 11D)'}</div>`;
-  g.addEventListener('pointermove',e=>tooltip(tip(),e));g.addEventListener('pointerleave',hideTip);g.addEventListener('click',()=>selectNode(nd.group));g.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();selectNode(nd.group);}});nodeLayer.append(g);
- }
+ if(view.edges.length===0){const text=svg('text',{x:500,y:392,'text-anchor':'middle',class:'selection-tip'},'No CpG arrows pass the active filters');edgeLayer.append(text);}
 }
-function updateRows(){let subset=current.rows;if(state.select.type==='edge')subset=subset.filter(i=>D.rows[i][R.DIR]===state.select.id);
- let tb=el('evidenceBody');tb.replaceChildren();let sorted=subset.slice().sort((a,b)=>{
-  const qa=qValue(D.rows[a]),qb=qValue(D.rows[b]);return (qa??999)-(qb??999)||Math.abs(diff(D.rows[b])??0)-Math.abs(diff(D.rows[a])??0);
- });
- for(const ri of sorted){let r=D.rows[ri],p=D.probes[r[R.PROBE]],q=qValue(r),del=diff(r),hit=qualifiesArrow(r);let row=document.createElement('tr');
-  const cells=[labelDir(r[R.DIR]),p[0],p[1]+':'+p[2],fmt(r[R.P]),fmt(r[R.I]),fmt(r[R.N]),fmt(del),fmtP(q),r[R.W]===null?'—':Math.round(100*r[R.W])+'%',shortFlags(r[R.MASK]).join(' · ')];
-  cells.forEach((v,j)=>{let cell=document.createElement('td');cell.textContent=v;if(j===6)cell.className=hit&&del!==null?(del>0?'effect-up':'effect-down'):'effect-flat';if(j===9){cell.className='labels-cell';cell.title=fullFlags(r[R.MASK]).join('; ');}row.append(cell);});tb.append(row);
- }
- if(!sorted.length){let tr=document.createElement('tr');let td=document.createElement('td');td.colSpan=10;td.className='empty-row';td.textContent='No CpGs match the current filters.';tr.append(td);tb.append(tr);}
- el('tableCount').textContent=sorted.length+' CpG–direction associations';el('tableExplainer').textContent='P = target primary; I = incoming from source; N = source nonbridge. Values are observed mean β. Bold Δβ means the row passes the active arrow cutoffs. q is CpG-wise BH FDR for the selected comparison.';
-}
-function metric(title,value,sub=''){return `<div class="metric"><span class="micro">${esc(title)}</span><strong class="value">${esc(value)}</strong>${sub?`<div class="help">${esc(sub)}</div>`:''}</div>`;}
-function detailEdges(){if(!current.edges.length)return '<div class="note">No arrow meets the current CpG-level contrast and cutoff. Try a different gene, a smaller |Δβ| threshold, or broader FDR. Gray circles may indicate unrepresented CpGs, not unmethylated genes.</div>';
- return '<div class="dir-list"><h3>Qualifying directions</h3>'+current.edges.slice(0,26).map(ed=>{
-  let d=D.directions[ed.id],active=state.select.type==='edge'&&ed.id===state.select.id;return `<button data-dir="${ed.id}" class="${active?'active':''}"><span style="color:${colors[ed.sign]}">●</span><span>${esc(d[0])} → ${esc(d[1])}</span><b>${ed.nCpG} CpG${ed.nCpG===1?'':'s'}</b></button>`;}).join('')+'</div>';
-}
-function showDetails(){const root=el('details');let html='';
- if(!state.gene){root.innerHTML='<p class="help">Select a gene from the search box.</p>';return;}
- let totalProbes=current.probes.length, totalEdges=current.edges.length;
- if(state.select.type==='edge'){
-  let ed=current.edges.find(x=>x.id===state.select.id);
-  if(!ed){state.select={type:'none',id:null};return showDetails();}
-  let [src,tgt,nS,nB,nN]=D.directions[ed.id];html=`<h3>${esc(src)} → ${esc(tgt)}</h3><p class="detail-subtitle">${esc(state.gene)} | incoming H neighborhood of ${esc(tgt)}</p>`+
-   metric('Qualifying promoter CpGs',ed.nCpG+' sites','CpG-level tests, not independent gene-level inference')+
-   metric('Original source patients',nS+' total',nB+' bridge / '+nN+' nonbridge (13C pooled counts)')+
-   metric('Mean Δβ among qualifying CpGs',fmt(ed.mean),compareName())+
-   `<div class="note">${ed.sign==='mixed'?`<strong>Mixed methylation directions.</strong> ${ed.nPositive} CpGs higher and ${ed.nNegative} lower. No single red/blue gene-level direction is imposed.`:ed.sign==='red'?'Higher beta in the incoming population at every qualifying promoter CpG for this arrow.':'Lower beta in the incoming population at every qualifying promoter CpG for this arrow.'} CpG-level observed counts vary with missing values.</div>`;
-  let hits=ed.ids.slice().sort((a,b)=>Math.abs(diff(D.rows[b]))-Math.abs(diff(D.rows[a]))).slice(0,16);
-  html+='<h3>Strongest CpG evidence</h3>'+hits.map(i=>{let r=D.rows[i],p=D.probes[r[R.PROBE]];return `<div class="metric"><strong>${esc(p[0])}</strong> <span class="micro">chr${esc(p[1])}:${p[2]}</span><div>Δβ <b class="${diff(r)>0?'effect-up':'effect-down'}">${fmt(diff(r))}</b> · q ${fmtP(qValue(r))}</div><div class="micro">β P/I/N: ${fmt(r[R.P])} / ${fmt(r[R.I])} / ${fmt(r[R.N])}</div><div class="micro">Observed n P/I/N: ${r[R.NP]} / ${r[R.NI]} / ${r[R.NN]}</div><div class="help">${esc(shortFlags(r[R.MASK]).join(' · '))}</div></div>`;}).join('');
-  html+='<div class="note">Only selected, promoter-annotated CpGs in the 12C/11D discovery suite appear. Passing a threshold here does not establish gene expression regulation or causality.</div>';
- }else if(state.select.type==='node'){
-  let nd=current.nodes.find(x=>x.group===state.select.id);html=`<h3>${esc(nd.group)}: original primary patients</h3><p class="detail-subtitle">${esc(state.gene)}; group-level beta across represented promoter CpGs</p>`+
-   metric('Mean β across available CpGs',fmt(nd.mean),'Descriptive arithmetic mean across unique CpGs; not a differential test')+
-   metric('CpG coverage',nd.nProbes+' / '+nd.available,'Unrepresented sites are missing, not beta=0')+
-   metric('Original primary group size',nd.count??'Not available','13C tested-group size; smaller/empty groups were not assessed');
-  html+='<h3>Group-level CpG means</h3>'+nd.obs.slice(0,35).map(v=>`<div class="metric"><strong>${esc(D.probes[v.p][0])}</strong><span class="value">β ${fmt(v.value.beta)}</span><div class="micro">n=${v.value.n} observed original-primary patients</div></div>`).join('');
-  html+='<div class="note">Values were either reported directly as target-primary means (11D) or reconstructed exactly from source bridge/nonbridge mean beta and CpG-specific observed counts. Different groups may have different represented CpGs, so compare coverage before interpreting differences.</div>';
+function metric(title,value,note=''){return `<div class="metric"><strong>${esc(title)}</strong><span class="value">${esc(value)}</span>${note?`<span class="micro">${esc(note)}</span>`:''}</div>`;}
+function smallMetric(title,value){return `<div class="metric small"><strong>${esc(title)}</strong><span class="value">${esc(value)}</span></div>`;}
+function displayGene(){return state.directProbe!==null?D.probes[state.directProbe][P.ID]:state.gene;}
+function prettyLocus(pr){return `chr${pr[P.CHR]}:${pr[P.START]}–${pr[P.END]} (${pr[P.STRAND]??'?'} strand)`;}
+function clinicalHtml(source,target){let html='<div class="clinical-list"><h3>Clinical bridge context (13C)</h3><p class="help">All / Female / Male summaries refer to clinical tests. CpG β and q-values above are pooled only.</p>';
+ const all=clinical.get(`${source}|${target}|All`);
+ if(all){html+=`<div class="note"><b>11D suite counts for this direction:</b> ${all[C.ASSOC]??0} association(s); ${all[C.UNIQUE]??0} unique CpGs; ${all[C.RESTRICT]??0} restricted; ${all[C.CONS]??0} conserved; ${all[C.BOTH]??0} both. These are pooled 11D counts, not clinical significance tests or sex-stratified CpG counts.</div>`;}
+ for(const pop of ['All','Female','Male']){const v=clinical.get(`${source}|${target}|${pop}`);
+ if(!v){html+=`<div class="clinical-card"><h4>${pop}</h4><div class="dimmed">No 13C pair record available.</div></div>`;continue;}
+ const eligible=v[C.STATUS]==='eligible'&&v[C.NB]!==null&&v[C.NN]!==null;
+ html+=`<div class="clinical-card"><h4>${esc(pop)} · ${eligible?'eligible':'not testable / redacted'}</h4>`;
+ if(eligible){html+=`<div class="clinical-line">Source n=${v[C.NS]}, bridge n=${v[C.NB]}, nonbridge n=${v[C.NN]}</div>`;
+ if(v[C.FEAT]!==null){html+=`<div class="clinical-line"><b>Top reported characteristic:</b> ${esc(v[C.FEAT])}${v[C.LEVEL]?' · '+esc(v[C.LEVEL]):''}</div>`;
+ html+=`<div class="clinical-line">Effect (bridge − nonbridge): ${fmt(v[C.EFFECT])} ${esc(v[C.UNIT]??'')} · within-population BH q=${fq(v[C.QW])} · overall BH q=${fq(v[C.QO])}</div>`;
+ }else html+='<div class="dimmed">13C has no ranked feature for this eligible direction.</div>';
+ }else html+='<div class="dimmed">13C did not support subgroup testing; potentially small counts and top clinical results are withheld in the public export.</div>';
+ html+='</div>';}
+ html+='<div class="note">The “top characteristic” is the one retained by the 13C summary table, <b>not the complete set</b> of tested clinical features. q-values are from clinical tests, not the CpG contrast, and the selected feature may not pass q≤0.05.</div></div>';
+ return html;}
+function chosenEdgeHtml(di, pairMode=false){const d=D.directions[di],source=d?.[0],target=d?.[1];if(!d)return '<p class="help">No CpG direction record.</p>';const ed=view.edges.find(x=>x.di===di);
+ let h=`<h3>${esc(source)} → ${esc(target)}</h3><p class="detail-subtitle">SOURCE original-primary patients evaluated for TARGET H-neighborhood inclusion</p>`;
+ h+=metric('Qualifying CpGs for selected gene',ed?.number??0,contrastText());
+ if(ed){h+=metric('Mean Δβ of qualifying sites',fmt(ed.avg),`${ed.pos} higher, ${ed.neg} lower`);
+ h+=`<div class="note">${ed.sign==='mixed'?'Mixed signs: no single gene-level hyper/hypomethylation classification.':`All qualifying CpGs have ${ed.sign==='red'?'positive':'negative'} effects.`} Gene-level mean is descriptive and has no combined p-value.</div>`;
+ h+='<h3>Highest |Δβ| sites</h3>'+ed.indices.slice().sort((a,b)=>Math.abs(effect(D.rows[b]))-Math.abs(effect(D.rows[a]))).slice(0,12).map(i=>{
+ const r=D.rows[i],p=D.probes[r[R.C]];return `<div class="metric"><a href="#" class="clickable" data-site="${i}">${esc(p[P.ID])}</a> · ${esc(p[P.REGION])}<div>Δβ ${fmt(effect(r))} · BH q ${fq(adjusted(r))}</div><div class="micro">P/I/N β: ${fmt(r[R.P])} / ${fmt(r[R.I])} / ${fmt(r[R.N])}</div></div>`;}).join('');
+ }else h+='<div class="note">No CpGs pass the current gene, region, and arrow filters for this direction. The clinical summary below remains available.</div>';
+ return h+clinicalHtml(source,target);}
+function rowDetail(i){const r=D.rows[i];if(!r)return '<p>Unknown CpG association.</p>';const pr=D.probes[r[R.C]],d=D.directions[r[R.D]];
+ let h=`<h3>${esc(pr[P.ID])}</h3><p class="detail-subtitle">${esc(d[0])} → ${esc(d[1])} · ${esc(pr[P.REGION])} · ${esc(pr[P.ISLAND]??'unclassified')}</p>`;
+ h+=`<div class="note"><b>${esc(prettyLocus(pr))}</b><div>Promoter overlap: ${esc(pr[P.PROM]||'—')}</div><div>Gene-body overlap: ${esc(pr[P.BODY]||'—')}</div><div>Nearest gene: ${esc(pr[P.NEAREST]||'—')} (${pr[P.DIST]===null?'unknown':pr[P.DIST]} bp)</div><div>Nearest does not imply regulation.</div></div>`;
+ h+='<div class="detail-grid">'+[
+ ['Mean β P',fmt(r[R.P],4)],['Mean β I',fmt(r[R.I],4)],['Mean β N',fmt(r[R.N],4)],
+ ['Observed n P / I / N',`${r[R.NP]} / ${r[R.NI]} / ${r[R.NN]}`],
+ ['SD P / I / N',`${fmt(r[R.SDP])} / ${fmt(r[R.SDI])} / ${fmt(r[R.SDN])}`],
+ ['Δβ I − N',fmt(r[R.DIN])],['Δβ I − P',fmt(-r[R.DPI])],['Δβ P − N',fmt(r[R.DPN])],
+ ['BH q I vs N',fq(r[R.QIN])],['BH q P vs I',fq(r[R.QPI])],['BH q P vs N',fq(r[R.QPN])],['BH q equivalence P~I',fq(r[R.QT])],
+ ['Raw Welch p I vs N',fq(r[R.PIN])],['Raw Welch p P vs I',fq(r[R.PPI])],['Raw Welch p P vs N',fq(r[R.PPN])],['Raw TOST p P~I',fq(r[R.PT])],
+ ['W target percentile',pct(r[R.W])],['W target specificity',fmt(r[R.WSPEC],4)],['W column share',fmt(r[R.WSHARE],6)],['W sensitivity weight',fmt(r[R.WSENS],4)]
+ ].map(k=>smallMetric(...k)).join('')+'</div>';
+ h+=`<h3>All preserved suite labels</h3><div>${allFlags(r[R.MASK]).map(k=>`<span class="bubble">${esc(k)}</span>`).join('')||'<span class="help">No prior flags retained</span>'}</div>`;
+ h+=`<p class="help">Conserved-direction annotation: ${esc(r[R.CONS]||'not specified')}. BH tests were corrected separately by direction/test family; TOST q is not a differential-methylation q.</p>`;
+ return h+clinicalHtml(d[0],d[1]);}
+function showDetails(){const root=get('details');let h='';const s=state.selection;
+ if(s.type==='edge'){h=chosenEdgeHtml(s.id);}else if(s.type==='pair'){
+ const [source,target]=s.id.split('|');let di=D.directions.findIndex(d=>d[0]===source&&d[1]===target);
+ h=di>=0?chosenEdgeHtml(di,true):`<h3>${esc(source)} → ${esc(target)}</h3><p class="help">No selected CpG association for this direction in 11D.</p>`+clinicalHtml(source,target);
+ }else if(s.type==='site'){h=rowDetail(s.id);}else if(s.type==='node'){
+ const node=view.nodes.find(v=>v.g===s.id);h=`<h3>${esc(node.g)}</h3><p class="detail-subtitle">Original NMF primary-group methylation for selected sites</p>`+
+ metric('Mean β across represented unique CpGs',fmt(node.mean),'Not relative to controls or other groups')+
+ metric('CpG coverage',`${node.found.length} / ${node.available}`,'CpGs represented in this original group / selected CpGs')+
+ metric('Original group size',node.count===null?'Not available':String(node.count),'No data fabricated for ineligible groups');
+ h+='<h3>Available CpG means</h3>'+node.found.slice(0,35).map(v=>`<div class="metric"><strong>${esc(D.probes[v.id][P.ID])}</strong><span class="value">β ${fmt(v.entry.beta)}</span><div class="micro">n=${v.entry.n} CpG-wise observed primary patients</div></div>`).join('');
+ h+='<div class="note">Each unique CpG contributes once per original group. Means are reported for target primary patients or reconstructed from source bridge and nonbridge counts. Unequal CpG coverage can affect comparisons.</div>';
  }else{
-   html=`<h3>${esc(state.gene)}</h3><p class="detail-subtitle">GRCh38 promoter overlap; ${state.mode==='cpg'?'single probe':'gene view'}</p>`+
-     metric('Selected distinct promoter CpGs',totalProbes)+metric('Directions passing CpG-level filters',totalEdges)+metric('NMF group node means available',current.nodes.filter(n=>n.mean!==null).length+' / 23','Source and target primary groups; four original groups were not eligible for 11D')+
-     '<div class="note"><b>Reading the network:</b> Red/blue circles reflect absolute mean β (low ↔ high) for original primary members. Red/blue arrows reflect a signed bridge versus reference contrast (higher ↔ lower). Gene-level arrows summarize individual CpG tests; they are not gene-level significance tests.</div>';
+ const grouped={Promoter:0,'Gene body':0,Intergenic:0};for(const p of new Set(getRowsForGene().map(i=>D.rows[i][R.C])))grouped[D.probes[p][P.REGION]]++;
+ h=`<h3>${esc(displayGene()||'No gene selected')}</h3><p class="detail-subtitle">${esc(state.region)} · ${state.mode==='gene'?'gene-level descriptive view':'single CpG'}</p>`+
+ metric('Unique CpGs after filters',String(view.probes.length))+
+ metric('Arrows passing per-CpG tests',String(view.edges.length),contrastText())+
+ metric('Original groups with mean β',`${view.nodes.filter(x=>x.mean!==null).length}/23`)+
+ `<div class="note"><b>Coverage before filters:</b> ${grouped.Promoter} promoter CpGs, ${grouped['Gene body']} gene-body CpGs, ${grouped.Intergenic} intergenic CpGs (assigned by nearest gene).</div>`+
+ '<div class="note">A CpG can carry several 06/06b/07a/11C/11D flags. Red/blue circles show absolute primary-group β; red/blue arrows show the selected signed group contrast. Neither demonstrates a time transition.</div>';
+ if(view.edges.length){h+='<h3>Qualifying directions</h3><div class="dir-list">'+view.edges.slice(0,30).map(ed=>{const d=D.directions[ed.di];return `<button data-direction="${ed.di}"><span style="color:${colors[ed.sign]}">●</span><span>${esc(d[0])} → ${esc(d[1])}</span><b>${ed.number} CpGs</b></button>`;}).join('')+'</div>';}
  }
- if(state.select.type!=='edge')html+=detailEdges();
- root.innerHTML=html;root.querySelectorAll('[data-dir]').forEach(btn=>btn.addEventListener('click',()=>selectEdge(Number(btn.dataset.dir))));
+ root.innerHTML=h;for(const b of root.querySelectorAll('[data-direction]'))b.addEventListener('click',()=>select('edge',Number(b.dataset.direction)));
+ for(const b of root.querySelectorAll('[data-site]'))b.addEventListener('click',e=>{e.preventDefault();select('site',Number(b.dataset.site));});
 }
-function draw(){current=summarize();if(state.select.type==='edge'&&!current.edges.some(x=>x.id===state.select.id))state.select={type:'none',id:null};
- el('geneStatus').textContent=`${new Set((D.geneRows[state.gene]||[]).map(i=>D.rows[i][R.PROBE])).size} unique promoter CpGs for ${state.gene} before filters`;
- el('graphTitle').textContent=state.gene+(state.mode==='cpg'&&state.cpg!==null?` · ${D.probes[state.cpg][0]}`:'');
- el('graphSubtitle').textContent=`${current.probes.length} distinct selected promoter CpGs · ${current.edges.length} directional arrows with CpG-level evidence · ${compareName()}`;
- el('edgeSummary').textContent=current.edges.length?`${current.edges.filter(e=>e.sign==='red').length} higher · ${current.edges.filter(e=>e.sign==='blue').length} lower · ${current.edges.filter(e=>e.sign==='mixed').length} mixed`: 'No arrows meet the active thresholds';
- populateNetwork();updateRows();showDetails();
+function renderEvidence(){let ids=view.ids;
+ if(state.selection.type==='edge')ids=ids.filter(i=>D.rows[i][R.D]===state.selection.id);
+ const ranked=ids.slice().sort((a,b)=>{let aQ=adjusted(D.rows[a]),bQ=adjusted(D.rows[b]);return (aQ??Infinity)-(bQ??Infinity)||Math.abs(effect(D.rows[b])??0)-Math.abs(effect(D.rows[a])??0);});
+ get('tableCount').textContent=`${ranked.length.toLocaleString()} association row(s); showing ${Math.min(250,ranked.length)}`;
+ const body=get('evidenceBody');body.replaceChildren();if(!ranked.length){let tr=document.createElement('tr');tr.innerHTML='<td colspan="12" class="empty-row">No selected CpG associations match these filters. Try All regions or a different signature label.</td>';body.append(tr);return;}
+ for(const i of ranked.slice(0,250)){const r=D.rows[i],p=D.probes[r[R.C]],d=D.directions[r[R.D]],v=effect(r);
+ const tr=document.createElement('tr');tr.className='evidence-row'+(state.selection.type==='site'&&state.selection.id===i?' selected':'');tr.tabIndex=0;
+ tr.innerHTML=`<td>${esc(d[0])} → ${esc(d[1])}</td><td class="clickable">${esc(p[P.ID])}</td><td><span class="ctx-label">${esc(p[P.REGION])}</span></td><td>chr${esc(p[P.CHR])}:${p[P.START]}</td><td>${esc(p[P.ISLAND])}</td><td>${fmt(r[R.P])}</td><td>${fmt(r[R.I])}</td><td>${fmt(r[R.N])}</td><td class="${v>0?'effect-up':v<0?'effect-down':'effect-flat'}">${fmt(v)}</td><td>${fq(adjusted(r))}</td><td>${pct(r[R.W])}</td><td class="labels-cell">${shortFlags(r[R.MASK]).map(z=>`<span class="small-label">${esc(z)}</span>`).join('')||'—'}</td>`;
+ tr.addEventListener('click',()=>select('site',i));tr.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();select('site',i);}});body.append(tr);}
 }
-function setupSearch(){let inp=el('geneSearch'),list=el('suggestions');
- const sugg=()=>{let q=inp.value.trim().toUpperCase();list.replaceChildren();if(!q){list.hidden=true;return;}
-  let starts=geneList.filter(g=>g.toUpperCase().startsWith(q)).slice(0,18),others=geneList.filter(g=>!g.toUpperCase().startsWith(q)&&g.toUpperCase().includes(q)).slice(0,12);
-  for(let gene of starts.concat(others)){let b=document.createElement('button');b.textContent=gene;b.type='button';b.addEventListener('click',()=>setGene(gene));list.append(b);}list.hidden=!list.children.length;};
- inp.addEventListener('input',sugg);inp.addEventListener('focus',()=>{if(inp.value!==state.gene)sugg();});
- inp.addEventListener('keydown',e=>{if(e.key==='Escape'){list.hidden=true;inp.blur();}if(e.key==='Enter'){e.preventDefault();let first=list.querySelector('button');if(first)first.click();else{let found=geneList.find(g=>g.toUpperCase()===inp.value.trim().toUpperCase());if(found)setGene(found);}}});
- document.addEventListener('pointerdown',e=>{if(!list.contains(e.target)&&e.target!==inp)list.hidden=true;});
- document.querySelectorAll('[data-try]').forEach(b=>b.addEventListener('click',()=>setGene(b.dataset.try)));
+function redrawText(){const raw=getRowsForGene(),allCpGs=new Set(raw.map(i=>D.rows[i][R.C]));const name=displayGene();
+ get('geneStatus').textContent=raw.length?`${allCpGs.size.toLocaleString()} CpGs linked by genomic position; ${view.probes.length.toLocaleString()} selected after filters`:'No annotated CpGs in this suite for this gene.';
+ get('graphTitle').textContent=name+(state.mode==='cpg'&&state.cpg!==null&&state.directProbe===null?' · '+D.probes[state.cpg][P.ID]:'');
+ get('graphSubtitle').textContent=`${view.probes.length} unique CpGs · ${view.edges.length} qualifying arrow(s) · ${contrastText()} · ${state.region}`;
+ get('edgeSummary').textContent=`${view.edges.filter(x=>x.sign==='red').length} higher · ${view.edges.filter(x=>x.sign==='blue').length} lower · ${view.edges.filter(x=>x.sign==='mixed').length} mixed`;
 }
-function setupControls(){setupSearch();
- const bind=(id,event,cb)=>el(id).addEventListener(event,e=>{cb(e.target.value);state.select={type:'none',id:null};draw();});
- bind('viewMode','change',v=>{state.mode=v;updateCpGs();});
- bind('cpgSelect','change',v=>{state.cpg=Number(v);});
- bind('signature','change',v=>state.signature=v);
- bind('contrast','change',v=>state.contrast=v);
+function draw(){view=computeView();if(state.selection.type==='edge'&&!view.edges.some(e=>e.di===state.selection.id))state.selection={type:'none',id:null};
+ if(state.selection.type==='site'&&!view.ids.includes(state.selection.id))state.selection={type:'none',id:null};
+ redrawText();drawNetwork();renderEvidence();showDetails();}
+function bind(id,event,fn){get(id).addEventListener(event,e=>{fn(e.target.value);state.selection={type:'none',id:null};draw();});}
+function setupSearch(){const input=get('geneSearch'),suggest=get('suggestions');
+ const refresh=()=>{const value=input.value.trim().toUpperCase();suggest.replaceChildren();if(!value){suggest.hidden=true;return;}
+ const starts=geneList.filter(g=>g.toUpperCase().startsWith(value)).slice(0,16),rest=geneList.filter(g=>!g.toUpperCase().startsWith(value)&&g.toUpperCase().includes(value)).slice(0,8);
+ for(const g of starts.concat(rest)){const b=document.createElement('button');b.type='button';b.textContent=g;b.addEventListener('click',()=>setGene(g));suggest.append(b);}suggest.hidden=!suggest.children.length;};
+ input.addEventListener('input',refresh);input.addEventListener('focus',()=>{if(input.value!==state.gene)refresh();});
+ input.addEventListener('keydown',e=>{if(e.key==='Escape'){suggest.hidden=true;input.blur();}if(e.key==='Enter'){e.preventDefault();const option=suggest.querySelector('button');if(option)option.click();else{const actual=geneIndex.get(input.value.trim().toUpperCase());if(actual)setGene(actual);}}});
+ document.addEventListener('pointerdown',e=>{if(!suggest.contains(e.target)&&e.target!==input)suggest.hidden=true;});
+ document.querySelectorAll('[data-try]').forEach(b=>b.addEventListener('click',()=>{const gene=geneIndex.get(b.dataset.try.toUpperCase());if(gene)setGene(gene);}));
+ get('goProbe').addEventListener('click',jumpProbe);get('probeSearch').addEventListener('keydown',e=>{if(e.key==='Enter')jumpProbe();});}
+function setupFilters(){setupSearch();
+ bind('region','change',v=>{state.region=v;updateCpGSelect();});
+ bind('island','change',v=>state.island=v);
+ bind('viewMode','change',v=>{state.mode=v;updateCpGSelect();});
+ bind('cpgSelect','change',v=>state.cpg=v===''?null:Number(v));
+ bind('signature','change',v=>state.signature=v);bind('contrast','change',v=>state.contrast=v);
  bind('qMax','change',v=>state.qMax=Number(v));
- bind('effectMin','input',v=>{state.effectMin=Number(v);el('effectMinLabel').textContent=fmt(state.effectMin,3);});
- bind('wMin','input',v=>{state.wMin=Number(v);el('wMinLabel').textContent=v+'%';});
- el('exportCsv').addEventListener('click',exportCSV);
+ bind('effectMin','input',v=>{state.effectMin=Number(v);get('effectMinLabel').textContent=fmt(state.effectMin);});
+ bind('wMin','input',v=>{state.wMin=Number(v);get('wMinLabel').textContent=v+'%';});
+ for(const id of ['sourceFilter','targetFilter']){let select=get(id);for(const g of groups){const o=document.createElement('option');o.value=g;o.textContent=g;select.append(o);}}
+ bind('sourceFilter','change',v=>state.source=v);bind('targetFilter','change',v=>state.target=v);
+ const allPairs=[...new Set(D.clinical.filter(v=>v[C.POP]==='All').map(v=>`${v[C.SOURCE]}|${v[C.TARGET]}`))].sort((a,b)=>{
+ let x=a.split('|'),y=b.split('|');return Number(x[0].slice(3))-Number(y[0].slice(3))||Number(x[1].slice(3))-Number(y[1].slice(3));});
+ for(const pair of allPairs){const o=document.createElement('option');o.value=pair;o.textContent=pair.replace('|',' → ');get('pairSelect').append(o);}
+ get('inspectPair').addEventListener('click',()=>select('pair',get('pairSelect').value));
+ get('exportCsv').addEventListener('click',exportCpGs);get('exportClinicalCsv').addEventListener('click',exportClinical);
 }
-function exportCSV(){let rs=current.rows;if(state.select.type==='edge')rs=rs.filter(i=>D.rows[i][R.DIR]===state.select.id);
- const heads=['Gene','CpG','Chr','Start_GRCh38','Source','Target','N_Target_Primary_Observed','N_Source_Bridge_Observed','N_Source_Nonbridge_Observed','Mean_Beta_Target_Primary','Mean_Beta_Source_Bridge','Mean_Beta_Source_Nonbridge','Delta_Bridge_Minus_Source_Nonbridge','BH_Bridge_vs_SourceNonbridge','BH_TargetPrimary_vs_Bridge','BH_TargetPrimary_vs_SourceNonbridge','BH_TOST_Primary_Equiv_Bridge','W_Target_Percentile','W_Target_Specificity','All_Provenance_Flags'];
- const lines=[heads];for(let i of rs){let r=D.rows[i],p=D.probes[r[R.PROBE]],d=D.directions[r[R.DIR]];
-   lines.push([state.gene,p[0],p[1],p[2],d[0],d[1],r[R.NP],r[R.NI],r[R.NN],r[R.P],r[R.I],r[R.N],r[R.DIN],r[R.QIN],r[R.QPI],r[R.QPN],r[R.QTOST],r[R.W],r[R.WSPEC],fullFlags(r[R.MASK]).join(';')]);}
- const contents=lines.map(cols=>cols.map(v=>`"${String(v??'').replaceAll('"','""')}"`).join(',')).join('\r\n');
- let blob=new Blob(['\ufeff',contents],{type:'text/csv;charset=utf-8;'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`Promoter_${state.gene.replace(/[^\w.-]+/g,'_')}_${state.contrast}.csv`;a.click();URL.revokeObjectURL(url);
+function saveCsv(name,headers,lines){const x=[headers,...lines].map(row=>row.map(v=>'"'+String(v??'').replaceAll('"','""')+'"').join(',')).join('\r\n');
+ const blob=new Blob(['\ufeff',x],{type:'text/csv;charset=utf-8;'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+function exportCpGs(){let ids=view.ids;if(state.selection.type==='edge')ids=ids.filter(i=>D.rows[i][R.D]===state.selection.id);
+ const head=['Gene_selected','CpG','Source','Target','Region','Island_context','Chromosome','Start_hg38','End_hg38','Strand','Promoter_overlaps','Gene_body_overlaps','Nearest_gene','Nearest_distance_bp',
+ 'Mean_beta_target_P','Mean_beta_bridge_I','Mean_beta_nonbridge_N','SD_P','SD_I','SD_N','Nobs_P','Nobs_I','Nobs_N',
+ 'Delta_I_minus_N','Delta_I_minus_P','Delta_P_minus_N','BH_q_I_vs_N','BH_q_P_vs_I','BH_q_P_vs_N','BH_q_TOST_P_equiv_I','P_Welch_I_vs_N','P_Welch_P_vs_I','P_Welch_P_vs_N','P_TOST',
+ 'W_target_percentile','W_target_specificity','W_target_column_share','W_sensitivity_weight','Conserved_direction','All_22_Provenance_Labels'];
+ const lines=ids.map(i=>{const r=D.rows[i],p=D.probes[r[R.C]],d=D.directions[r[R.D]];return [displayGene(),p[P.ID],d[0],d[1],p[P.REGION],p[P.ISLAND],p[P.CHR],p[P.START],p[P.END],p[P.STRAND],p[P.PROM],p[P.BODY],p[P.NEAREST],p[P.DIST],
+ r[R.P],r[R.I],r[R.N],r[R.SDP],r[R.SDI],r[R.SDN],r[R.NP],r[R.NI],r[R.NN],r[R.DIN],r[R.I]===null||r[R.P]===null?null:r[R.I]-r[R.P],r[R.DPN],r[R.QIN],r[R.QPI],r[R.QPN],r[R.QT],r[R.PIN],r[R.PPI],r[R.PPN],r[R.PT],r[R.W],r[R.WSPEC],r[R.WSHARE],r[R.WSENS],r[R.CONS],allFlags(r[R.MASK]).join(';')];});
+ saveCsv(`pAML_CpG_${displayGene().replace(/[^\w.-]/g,'_')}_${state.region.replace(/\s+/g,'_')}.csv`,head,lines);}
+function exportClinical(){
+ const headers=['Source','Target','Population','13C_status','N_Source_if_eligible','N_Bridge_if_eligible','N_Nonbridge_if_eligible',
+ 'Top_Feature_if_eligible','Top_Level','Top_Feature_Type','Top_Effect_Bridge_Minus_NonBridge','Effect_Unit','Top_P','Top_FDR_Within_Population','Top_FDR_Overall','Top_Primary_Test',
+ 'N_11D_Directional_Associations','N_11D_Unique_CpGs','N_PrimaryRestricted_CpGs','N_NeighborhoodConserved_CpGs','N_Both','N_PrimaryOnly','N_ConservedOnly','N_Neither','Has_11D_CpGs'];
+ saveCsv('pAML_13C_Clinical_Directional_Abbreviated_Public.csv',headers,D.clinical);
 }
-function boot(){el('datasetStats').innerHTML=`<span class="stat"><b>${D.meta.cohortPatients}</b> original patients</span><span class="stat"><b>${D.meta.uniqueCpGs.toLocaleString()}</b> promoter CpGs</span><span class="stat"><b>${D.meta.promoterGenes.toLocaleString()}</b> promoter gene labels</span><span class="stat"><b>${D.meta.eligibleDirections}</b> analyzed bridge directions with promoter CpGs</span><span class="stat"><b>19</b> eligible original primary groups</span>`;
- setupControls();setGene(D.geneRows.GATA3?'GATA3':geneList[0]);
-}
+function boot(){get('datasetStats').innerHTML=`<span class="stat"><b>${D.meta.cohortPatients}</b> original patients</span><span class="stat"><b>${D.meta.uniqueCpGs.toLocaleString()}</b> unique CpGs</span><span class="stat"><b>${D.meta.associations.toLocaleString()}</b> CpG × direction rows</span><span class="stat"><b>${D.meta.strictPromoterCpGs.toLocaleString()}</b> promoter CpGs</span><span class="stat"><b>${D.meta.geneLabels.toLocaleString()}</b> genomic gene labels</span><span class="stat"><b>${D.meta.eligibleDirectionsWithCpGs}</b> directions with selected CpGs</span>`;
+ setupFilters();const g=geneIndex.get('GATA3')||geneList[0];setGene(g);}
 boot();
 })();
